@@ -1,20 +1,35 @@
 /* ============================================================
    iRiLLL MODZ — LOGIC.JS (full: UI + features + toggles)
-   version: 2.5.1
-   License: Pastefy (https://pastefy.app)
+   version: 2.5.2
+   License: LOCAL KEYLIST (offline, no pastefy)
    ============================================================ */
 (function () {
   'use strict';
   if (window.__pb) return;
 
   /* ============================================================
-     LICENSE GATE — Pastefy (simple keylist validation)
+     LICENSE GATE — LOCAL KEYLIST (tanpa pastefy / online)
      ============================================================ */
-  var PF_PASTE_ID  = 'ar5c5o7z';              // paste ID baru
   var PF_KEY_LS    = 'iril_pf_key';
   var PF_TOKEN_LS  = 'iril_pf_token';
   var PF_EXP_LS    = 'iril_pf_exp';
   var PF_CACHE_MS  = 1 * 3600 * 1000;         // cache valid 1 jam (wajib input ulang tiap 1 jam)
+
+  // ===== EDIT KEY LIST DI SINI =====
+  // Format bebas: boleh spasi, pendek, emoji, simbol, apa pun.
+  // Case-sensitive (IRIL ≠ iril).
+  var PF_LOCAL_KEYS = [
+    'IRIL',
+    'IRIL-VIP-MODZ',
+    'IRIL-ABCD-1234',
+    'IRIL-EFGH-5678',
+    'IRIL-IJKL-9012',
+    'my key 123',
+    'abc',
+    'k',
+    '🔥PREMIUM🔥'
+  ];
+  // ==================================
 
   function pfGet(k, d) {
     try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; }
@@ -23,98 +38,20 @@
     try { localStorage.setItem(k, v); } catch (e) {}
   }
 
-  // Parse raw text jadi array key — FORMAT BEBAS
-  function pfParseKeys(txt) {
-    if (!txt) return [];
-    txt = String(txt).trim();
-    if (!txt) return [];
-    if (txt.charAt(0) === '[' || txt.charAt(0) === '{') {
-      try {
-        var j = JSON.parse(txt);
-        var arr = null;
-        if (Array.isArray(j)) arr = j;
-        else if (j && Array.isArray(j.keys)) arr = j.keys;
-        if (arr) {
-          return arr.map(function (x) { return String(x).trim(); })
-                    .filter(function (x) { return x && x.length >= 1; });
-        }
-      } catch (e) { /* fallback ke line-based */ }
-    }
-    return txt.split(/[\r\n]+/)
-      .map(function (s) { return s.replace(/^["'\s]+|["'\s]+$/g, '').trim(); })
-      .filter(function (s) { return s && s.length >= 1; });
-  }
-
-  function pfFetchKeys(cb) {
-    var id = encodeURIComponent(PF_PASTE_ID);
-    var urls = [
-      'https://pastefy.app/' + id + '/raw',
-      'https://pastefy.app/api/v2/paste/' + id + '/raw'
-    ];
-    var idx = 0;
-
-    function tryNext() {
-      if (idx >= urls.length) { cb(null); return; }
-      var url = urls[idx++];
-      var done = false;
-      function finish(ok, text) {
-        if (done) return;
-        done = true;
-        if (ok && text) {
-          var keys = pfParseKeys(text);
-          if (keys.length) { cb(keys); return; }
-        }
-        tryNext();
-      }
-
-      if (typeof fetch === 'function') {
-        var ctl = null, to = null;
-        try { ctl = new AbortController(); to = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 10000); } catch (e) {}
-        fetch(url, { method: 'GET', credentials: 'omit', signal: ctl ? ctl.signal : undefined })
-          .then(function (r) {
-            if (to) clearTimeout(to);
-            if (!r || !r.ok) { finish(false); return; }
-            return r.text().then(function (t) { finish(true, t); });
-          })
-          .catch(function () {
-            if (to) clearTimeout(to);
-            finish(false);
-          });
-        return;
-      }
-
-      try {
-        var x = new XMLHttpRequest();
-        x.open('GET', url, true);
-        x.timeout = 10000;
-        x.onload = function () {
-          if (x.status >= 200 && x.status < 300) finish(true, x.responseText);
-          else finish(false);
-        };
-        x.onerror = x.ontimeout = function () { finish(false); };
-        x.send();
-      } catch (e) { finish(false); }
-    }
-
-    tryNext();
-  }
-
+  // Validasi lokal — tidak fetch, tidak perlu internet, instan
   function pfValidate(key, cb) {
-    pfFetchKeys(function (keys) {
-      if (!keys) {
-        cb(false, 'fetch');
-        return;
-      }
-      var target = String(key).trim();
-      var ok = keys.some(function (k) { return k === target; });
-      if (ok) {
-        pfSet(PF_TOKEN_LS, 'ok_' + Date.now());
-        pfSet(PF_EXP_LS, String(Date.now() + PF_CACHE_MS));
-        cb(true);
-      } else {
-        cb(false, 'invalid');
-      }
-    });
+    var target = String(key).trim();
+    if (!target) { cb(false, 'invalid'); return; }
+    // Case-sensitive match. Kalau mau case-insensitive, ganti baris di bawah:
+    // var ok = PF_LOCAL_KEYS.some(function (k) { return k.toLowerCase() === target.toLowerCase(); });
+    var ok = PF_LOCAL_KEYS.some(function (k) { return k === target; });
+    if (ok) {
+      pfSet(PF_TOKEN_LS, 'ok_' + Date.now());
+      pfSet(PF_EXP_LS, String(Date.now() + PF_CACHE_MS));
+      cb(true);
+    } else {
+      cb(false, 'invalid');
+    }
   }
 
   function pfCacheValid() {
@@ -176,14 +113,12 @@
           st.textContent = 'Memverifikasi…';
           btnOk.disabled = true;
           btnOk.style.opacity = '.7';
+          // Validasi lokal — instan, tanpa fetch
           pfValidate(k, function (ok, reason) {
             btnOk.disabled = false;
             btnOk.style.opacity = '1';
             if (ok) { pfSet(PF_KEY_LS, k); close(); cb(k); }
-            else if (reason === 'fetch') {
-              st.style.color = '#b45309';
-              st.textContent = 'Gagal terhubung ke server license. Cek koneksi lalu coba lagi.';
-            } else {
+            else {
               st.style.color = '#b91c1c';
               st.textContent = 'Key tidak valid';
             }
@@ -249,7 +184,7 @@
      BOOT CORE — seluruh logic fitur asli ada di sini
      ============================================================ */
   function bootCore() {
-    var V = '2.5.1';
+    var V = '2.5.2';
     var BRAND = 'iRiLLL MODZ';
     function log() { try { console.log.apply(console, ['[iR]'].concat([].slice.call(arguments))); } catch (e) {} }
 
